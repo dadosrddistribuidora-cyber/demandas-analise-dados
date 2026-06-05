@@ -4,6 +4,10 @@ from datetime import datetime
 import json
 import os
 
+import gspread
+from google.oauth2.service_account import Credentials
+from gspread.exceptions import WorksheetNotFound
+
 st.set_page_config(
     page_title="Solicitações — Análise de Dados",
     page_icon="📊",
@@ -12,24 +16,128 @@ st.set_page_config(
 )
 
 # ── Senhas ──────────────────────────────────────────────────────────────────
-SENHA_LIDER    = "lider123"
+# As senhas agora vêm do Streamlit Secrets.
+# No Streamlit Cloud, confira em: App > Settings > Secrets.
+SENHAS = dict(st.secrets.get("senhas", {}))
+
+SENHA_LIDER = SENHAS.get("lider", "lider123")
 SENHA_ANALISTA = {
-    "Artur":    "artur123",
-    "Gabriel": "gabriel123",
-    "Edson": "edson123",
+    "Artur": SENHAS.get("artur", "artur10"),
+    "Gabriel": SENHAS.get("gabriel", "gabriel20"),
+    "Edson": SENHAS.get("edson", "edson30"),
 }
 
-ARQUIVO = "demandas.json"
+# ── Google Sheets ────────────────────────────────────────────────────────────
+NOME_ABA = "Demandas"
+COLUNAS = [
+    "id", "data", "nome", "setor", "tipo", "objetivo", "contexto",
+    "resultado", "frequencia", "status", "analista", "prazo",
+]
+
+SCOPES = ["https://www.googleapis.com/auth/spreadsheets"]
+
+@st.cache_resource
+def conectar_aba_demandas():
+    """Conecta no Google Sheets usando as credenciais salvas no Streamlit Secrets."""
+    try:
+        service_account_info = dict(st.secrets["gcp_service_account"])
+        # Garante compatibilidade caso a chave privada tenha sido salva com \n.
+        service_account_info["private_key"] = service_account_info["private_key"].replace("\\n", "\n")
+
+        credenciais = Credentials.from_service_account_info(
+            service_account_info,
+            scopes=SCOPES,
+        )
+        cliente = gspread.authorize(credenciais)
+        planilha = cliente.open_by_key(st.secrets["sheets"]["id"])
+
+        try:
+            aba = planilha.worksheet(NOME_ABA)
+        except WorksheetNotFound:
+            aba = planilha.add_worksheet(title=NOME_ABA, rows=1000, cols=len(COLUNAS))
+
+        cabecalho_atual = aba.row_values(1)
+        if cabecalho_atual != COLUNAS:
+            aba.update([COLUNAS], "A1")
+
+        migrar_json_para_sheets_se_existir(aba)
+
+        return aba
+
+    except Exception as erro:
+        st.error("Não foi possível conectar ao Google Sheets.")
+        st.info(
+            "Confira se o Google Sheets foi compartilhado com o e-mail da service account "
+            "e se o ID da planilha está correto no Secrets."
+        )
+        st.exception(erro)
+        st.stop()
+
+def migrar_json_para_sheets_se_existir(aba):
+    """Migra demandas antigas do arquivo local demandas.json, se ele existir e a planilha estiver vazia."""
+    try:
+        if aba.get_all_records():
+            return
+
+        if not os.path.exists("demandas.json"):
+            return
+
+        with open("demandas.json", "r", encoding="utf-8") as arquivo:
+            demandas_antigas = json.load(arquivo)
+
+        if not demandas_antigas:
+            return
+
+        linhas = []
+        for demanda in demandas_antigas:
+            linhas.append([demanda.get(coluna, "") for coluna in COLUNAS])
+
+        aba.clear()
+        aba.update([COLUNAS] + linhas, "A1")
+        st.toast("Demandas antigas migradas do demandas.json para o Google Sheets.")
+
+    except Exception:
+        # A migração é apenas uma segurança extra. Se falhar, o app continua funcionando.
+        pass
 
 def carregar_demandas():
-    if os.path.exists(ARQUIVO):
-        with open(ARQUIVO, "r", encoding="utf-8") as f:
-            return json.load(f)
-    return []
+    """Lê todas as demandas da aba Demandas."""
+    aba = conectar_aba_demandas()
+    registros = aba.get_all_records()
+
+    demandas = []
+    for registro in registros:
+        if not registro.get("id"):
+            continue
+
+        demanda = {coluna: registro.get(coluna, "") for coluna in COLUNAS}
+
+        try:
+            demanda["id"] = int(float(demanda["id"]))
+        except Exception:
+            pass
+
+        if not demanda.get("status"):
+            demanda["status"] = "Aberta"
+        if demanda.get("prazo"):
+            demanda["prazo"] = str(demanda["prazo"])
+
+        demandas.append(demanda)
+
+    # Mantém as mais recentes primeiro, como já acontecia no JSON.
+    demandas.sort(key=lambda d: int(d.get("id", 0)), reverse=True)
+    return demandas
 
 def salvar_demandas(demandas):
-    with open(ARQUIVO, "w", encoding="utf-8") as f:
-        json.dump(demandas, f, ensure_ascii=False, indent=2, default=str)
+    """Regrava a planilha com a lista atualizada de demandas."""
+    aba = conectar_aba_demandas()
+
+    linhas = []
+    for demanda in demandas:
+        linhas.append([demanda.get(coluna, "") for coluna in COLUNAS])
+
+    aba.clear()
+    aba.update([COLUNAS] + linhas, "A1")
 
 # ── CSS ─────────────────────────────────────────────────────────────────────
 st.markdown("""
