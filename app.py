@@ -1,6 +1,7 @@
 import streamlit as st
 import pandas as pd
 from datetime import datetime
+from zoneinfo import ZoneInfo
 import json
 import os
 
@@ -33,6 +34,13 @@ COLUNAS = [
     "id", "data", "nome", "setor", "tipo", "objetivo", "contexto",
     "resultado", "frequencia", "status", "analista", "prazo",
 ]
+
+# Fuso horário local da RD/RN/PB.
+FUSO_BRASIL = ZoneInfo("America/Fortaleza")
+
+def agora_brasil():
+    """Retorna a data/hora atual no fuso de RN/PB, independente do servidor do Streamlit."""
+    return datetime.now(FUSO_BRASIL)
 
 SCOPES = ["https://www.googleapis.com/auth/spreadsheets"]
 
@@ -293,9 +301,10 @@ with aba_form:
             for e in erros: st.error(f"⚠️ {e}")
         else:
             demandas = carregar_demandas()
+            agora = agora_brasil()
             nova = {
-                "id": int(datetime.now().timestamp() * 1000),
-                "data": datetime.now().strftime("%d/%m/%Y %H:%M"),
+                "id": int(agora.timestamp() * 1000),
+                "data": agora.strftime("%d/%m/%Y %H:%M"),
                 "nome": nome.strip(), "setor": setor, "tipo": tipo,
                 "objetivo": objetivo.strip(), "contexto": contexto.strip(),
                 "resultado": resultado, "frequencia": frequencia,
@@ -426,7 +435,7 @@ with aba_lider:
             df.columns = ["Data","Nome","Setor","Tipo","Objetivo","Contexto","Resultado","Frequência","Status","Analista","Prazo"]
             csv = df.to_csv(index=False).encode("utf-8-sig")
             st.download_button("⬇️ Exportar CSV", data=csv,
-                file_name=f"demandas_{datetime.now().strftime('%Y%m%d')}.csv", mime="text/csv")
+                file_name=f"demandas_{agora_brasil().strftime('%Y%m%d')}.csv", mime="text/csv")
 
         # ── Resumo por analista ───────────────────────────────────────────────
         st.markdown("---")
