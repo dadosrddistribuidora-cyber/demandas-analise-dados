@@ -23,27 +23,39 @@ PLANILHA_ID = st.secrets["sheets"]["id"]
  
 # ── Conexão SEM cache_resource para evitar erro após hibernação ──────────────
 def conectar_planilha():
+    # Puxa a chave original dos secrets
+    chave_bruta = st.secrets["gcp_service_account"]["private_key"]
+    
+    # Corrige quebras de linha invisíveis substituindo os espaços problemáticos por \n reais
+    if "\\n" in chave_bruta:
+        chave_corrigida = chave_bruta.replace("\\n", "\n")
+    else:
+        # Se veio com quebras de linha normais, reconstrói limpando espaços extras
+        linhas_chave = [linha.strip() for linha in chave_bruta.split("\n") if linha.strip()]
+        chave_corrigida = "\n".join(linhas_chave)
+
     info = {
         "type":                        st.secrets["gcp_service_account"]["type"],
         "project_id":                  st.secrets["gcp_service_account"]["project_id"],
         "private_key_id":              st.secrets["gcp_service_account"]["private_key_id"],
-        "private_key":                 st.secrets["gcp_service_account"]["private_key"],
+        "private_key":                 chave_corrigida,  # Usa a chave limpa e tratada
         "client_email":                st.secrets["gcp_service_account"]["client_email"],
         "client_id":                   st.secrets["gcp_service_account"]["client_id"],
         "auth_uri":                    st.secrets["gcp_service_account"]["auth_uri"],
         "token_uri":                   st.secrets["gcp_service_account"]["token_uri"],
-        "auth_provider_x509_cert_url": "https://www.googleapis.com/oauth2/v1/certs",
-        "client_x509_cert_url":        "",
+        "auth_provider_x509_cert_url": st.secrets["gcp_service_account"]["auth_provider_x509_cert_url"],
+        "client_x509_cert_url":        st.secrets["gcp_service_account"]["client_x509_cert_url"],
+        "universe_domain":             st.secrets["gcp_service_account"]["universe_domain"]
     }
-    creds = Credentials.from_service_account_info(
-        info,
-        scopes=[
-            "https://www.googleapis.com/auth/spreadsheets",
-            "https://www.googleapis.com/auth/drive",
-        ],
-    )
-    cliente = gspread.authorize(creds)
-    return cliente.open_by_key(PLANILHA_ID).sheet1
+    
+    escopos = [
+        "https://www.googleapis.com/auth/spreadsheets",
+        "https://www.googleapis.com/auth/drive"
+    ]
+    
+    creds = Credentials.from_service_account_info(info, scopes=escopos)
+    client = gspread.authorize(creds)
+    return client.open_by_key(PLANILHA_ID).worksheet("Demandas")
  
 def carregar_demandas():
     try:
