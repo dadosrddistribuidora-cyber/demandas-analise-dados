@@ -3,42 +3,40 @@ import pandas as pd
 from datetime import datetime
 import gspread
 from google.oauth2.service_account import Credentials
- 
+
 st.set_page_config(
     page_title="Solicitações — Análise de Dados",
     page_icon="📊",
     layout="wide",
     initial_sidebar_state="collapsed",
 )
- 
-# ── Senhas — lidas dos secrets, não hardcoded ────────────────────────────────
+
+# ── Senhas — lidas dos secrets ──────────────────────────────────────────────
 SENHA_LIDER    = st.secrets["senhas"]["lider"]
 SENHA_ANALISTA = {
     "Artur":    st.secrets["senhas"]["artur"],
     "Gabriel":  st.secrets["senhas"]["gabriel"],
     "Edson":    st.secrets["senhas"]["edson"],
 }
- 
+
 PLANILHA_ID = st.secrets["sheets"]["id"]
- 
-# ── Conexão SEM cache_resource para evitar erro após hibernação ──────────────
+
+# ── Conexão Tratada e Blindada Contra Erros de Chave Privada ─────────────────
 def conectar_planilha():
-    # Puxa a chave original dos secrets
     chave_bruta = st.secrets["gcp_service_account"]["private_key"]
     
-    # Corrige quebras de linha invisíveis substituindo os espaços problemáticos por \n reais
+    # Tratamento definitivo para quebras de linha da chave PEM
     if "\\n" in chave_bruta:
         chave_corrigida = chave_bruta.replace("\\n", "\n")
     else:
-        # Se veio com quebras de linha normais, reconstrói limpando espaços extras
-        linhas_chave = [linha.strip() for linha in chave_bruta.split("\n") if linha.strip()]
+        linhas_chave = [linha.strip() for line in chave_bruta.split("\n") if linha.strip()]
         chave_corrigida = "\n".join(linhas_chave)
 
     info = {
         "type":                        st.secrets["gcp_service_account"]["type"],
         "project_id":                  st.secrets["gcp_service_account"]["project_id"],
         "private_key_id":              st.secrets["gcp_service_account"]["private_key_id"],
-        "private_key":                 chave_corrigida,  # Usa a chave limpa e tratada
+        "private_key":                 chave_corrigida,
         "client_email":                st.secrets["gcp_service_account"]["client_email"],
         "client_id":                   st.secrets["gcp_service_account"]["client_id"],
         "auth_uri":                    st.secrets["gcp_service_account"]["auth_uri"],
@@ -56,17 +54,16 @@ def conectar_planilha():
     creds = Credentials.from_service_account_info(info, scopes=escopos)
     client = gspread.authorize(creds)
     return client.open_by_key(PLANILHA_ID).worksheet("Demandas")
- 
+
+# ── Carregar demandas com proteção contra cabeçalhos/linhas vazias ──────────
 def carregar_demandas():
     try:
         sheet = conectar_planilha()
         linhas = sheet.get_all_values()
         
-        # Se a planilha não tiver nada ou só tiver o cabeçalho, retorna lista vazia de forma segura
         if not linhas or len(linhas) <= 1:
             return []
             
-        # Definimos o cabeçalho exato que o código espera, limpando qualquer erro da planilha
         cabecalho_esperado = [
             "id", "nome", "setor", "tipo", "objetivo", "contexto", 
             "resultado", "frequencia", "prazo", "data", "status", "analista", "prioridade"
@@ -74,448 +71,150 @@ def carregar_demandas():
         
         demandas = []
         for l in linhas[1:]:
-            # Se a linha capturada estiver completamente vazia, pula ela
             if not any(l):
                 continue
-                
-            # Ajusta o tamanho da linha para bater exatamente com o cabeçalho esperado
             if len(l) < len(cabecalho_esperado):
                 l = l + [""] * (len(cabecalho_esperado) - len(l))
             else:
                 l = l[:len(cabecalho_esperado)]
                 
             dados = dict(zip(cabecalho_esperado, l))
-            
-            # Converte o ID para número com segurança
             try:
                 dados["id"] = int(dados["id"]) if dados["id"] else 0
             except:
                 dados["id"] = 0
-                
             demandas.append(dados)
-            
         return demandas
     except Exception as e:
-        st.error(f"Erro crítico ao carregar dados: {e}")
+        st.error(f"Erro ao carregar dados da planilha: {e}")
         return []
- 
-def salvar_demandas(demandas):
-    sheet = conectar_planilha()
-    cabecalho = [["id","data","nome","setor","tipo","objetivo","contexto","resultado","frequencia","status","analista","prazo"]]
-    linhas = [[
-        d.get("id",""),
-        d.get("data",""),
-        d.get("nome",""),
-        d.get("setor",""),
-        d.get("tipo",""),
-        d.get("objetivo",""),
-        d.get("contexto",""),
-        d.get("resultado",""),
-        d.get("frequencia",""),
-        d.get("status",""),
-        d.get("analista",""),
-        d.get("prazo","")
-    ] for d in demandas]
- 
-    sheet.clear()
-    sheet.update(cabecalho + linhas)
- 
-# ── CSS ─────────────────────────────────────────────────────────────────────
-st.markdown("""
-<style>
-@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&display=swap');
-html, body, [class*="css"] { font-family: 'Inter', sans-serif; }
-#MainMenu {visibility: hidden;} footer {visibility: hidden;} header {visibility: hidden;}
- 
-.header-bar {
-    background: linear-gradient(135deg, #1a3a5c 0%, #185FA5 100%);
-    padding: 1.2rem 2rem; border-radius: 12px; margin-bottom: 1.5rem; color: white;
-}
-.header-bar h1 { margin: 0; font-size: 1.5rem; font-weight: 600; color: white; }
-.header-bar p  { margin: 0.2rem 0 0; font-size: 0.85rem; opacity: 0.85; color: white; }
- 
-.info-box {
-    background: #EBF5FB; border-left: 4px solid #185FA5; border-radius: 0 6px 6px 0;
-    padding: 0.75rem 1rem; font-size: 0.88rem; color: #1a3a5c; margin-bottom: 0.8rem;
-}
-.warning-box {
-    background: #FEF9EC; border-left: 4px solid #F4A62A; border-radius: 0 6px 6px 0;
-    padding: 0.75rem 1rem; font-size: 0.88rem; color: #7a5000; margin-bottom: 0.8rem;
-}
- 
-.metric-card {
-    background: white; border: 1px solid #e8ecf0; border-radius: 10px;
-    padding: 1rem 1.2rem; text-align: center;
-}
-.metric-card .num  { font-size: 2rem; font-weight: 600; color: #185FA5; }
-.metric-card .lbl  { font-size: 0.8rem; color: #6b7a8d; margin-top: 2px; }
- 
-.analista-card {
-    background: white; border: 1px solid #e8ecf0; border-radius: 10px; padding: 1rem 1.2rem; margin-bottom: 0.6rem;
-}
-.analista-card h4 { margin: 0 0 0.5rem; font-size: 0.95rem; color: #1a3a5c; }
- 
-.badge-aberta    { background:#FEF3E2; color:#854F0B; padding:2px 10px; border-radius:20px; font-size:12px; font-weight:500; }
-.badge-execucao  { background:#E6F1FB; color:#185FA5; padding:2px 10px; border-radius:20px; font-size:12px; font-weight:500; }
-.badge-concluida { background:#EAF3DE; color:#3B6D11; padding:2px 10px; border-radius:20px; font-size:12px; font-weight:500; }
- 
-.lock-card {
-    max-width: 380px; margin: 3rem auto; background: white;
-    border: 1px solid #e8ecf0; border-radius: 16px; padding: 2.5rem 2rem; text-align: center;
-    box-shadow: 0 4px 20px rgba(0,0,0,0.07);
-}
-.lock-card h2 { font-size: 1.2rem; color: #1a3a5c; margin-bottom: 0.4rem; }
-.lock-card p  { font-size: 0.85rem; color: #6b7a8d; margin-bottom: 1.5rem; }
- 
-.stButton > button[kind="primary"] {
-    background: #185FA5 !important; border: none !important;
-    border-radius: 8px !important; font-weight: 500 !important;
-}
-.stTabs [data-baseweb="tab-list"] { gap: 8px; border-bottom: 2px solid #e8ecf0; }
-.stTabs [aria-selected="true"] { background: #185FA5 !important; color: white !important; border-radius: 8px 8px 0 0; }
-</style>
-""", unsafe_allow_html=True)
- 
-# ── Inicializa session state ─────────────────────────────────────────────────
-if "logado_como" not in st.session_state:
-    st.session_state.logado_como = None  # None | "lider" | nome_analista
- 
-# ══════════════════════════════════════════════════════════════════════════════
-# CABEÇALHO
-# ══════════════════════════════════════════════════════════════════════════════
-col_h, col_logout = st.columns([5, 1])
-with col_h:
-    st.markdown("""
-    <div class="header-bar">
-        <h1>📊 Setor de Análise de Dados</h1>
-        <p>Sistema de solicitações e gerenciamento de demandas</p>
-    </div>
-    """, unsafe_allow_html=True)
-with col_logout:
-    if st.session_state.logado_como:
-        st.markdown("<br>", unsafe_allow_html=True)
-        if st.button("🔓 Sair", use_container_width=True):
-            st.session_state.logado_como = None
-            st.rerun()
- 
-# ══════════════════════════════════════════════════════════════════════════════
-# ABAS PRINCIPAIS
-# ══════════════════════════════════════════════════════════════════════════════
-aba_form, aba_lider, aba_analista = st.tabs([
-    "📝  Formulário de Solicitação",
-    "👑  Painel do Líder",
-    "👤  Painel do Analista",
-])
- 
-# ══════════════════════════════════════════════════════════════════════════════
-# ABA 1 — FORMULÁRIO DO SOLICITANTE
-# ══════════════════════════════════════════════════════════════════════════════
-with aba_form:
-    st.markdown("### Nova solicitação")
-    st.markdown("Preencha todos os campos para registrar sua demanda.")
-    st.markdown("")
- 
-    with st.container():
-        st.markdown("**👤 Identificação**")
-        col1, col2 = st.columns(2)
-        with col1:
-            nome = st.text_input("Nome completo *", placeholder="Nome e sobrenome")
-        with col2:
-            setor = st.selectbox("Setor / Departamento *", options=[
-                "", "Comercial", "Educação", "Faturamento", "Financeiro",
-                "Logística", "Marketing", "Televendas", "Direção", "Outro"
-            ])
- 
-    st.markdown("---")
-    st.markdown("**📋 Tipo de solicitação**")
-    tipo = st.radio("", options=[
-        "Relatório", "Dashboard", "Extração de dados", "Indicadores / KPIs",
-        "Automação de processo", "Correção / Ajuste de relatório", "Estudo / Análise específica",
-    ], horizontal=True, label_visibility="collapsed")
- 
-    st.markdown("---")
-    st.markdown("**📝 Detalhes**")
-    objetivo = st.text_area("Objetivo da solicitação *",
-        placeholder="Descreva de forma clara o que precisa ser desenvolvido ou analisado...", height=100)
-    contexto = st.text_area("Contexto do negócio *",
-        placeholder="Explique o motivo da solicitação e qual decisão ou processo será impactado...", height=100)
- 
-    st.markdown("---")
-    st.markdown("**📦 Entrega**")
-    col3, col4 = st.columns(2)
-    with col3:
-        resultado = st.selectbox("Resultado esperado *", options=["", "Excel", "Dashboard", "PDF", "Outro"])
-    with col4:
-        frequencia = st.selectbox("Frequência de entrega *", options=[
-            "", "Solicitação única", "Diária", "Semanal", "Quinzenal", "Mensal", "Sob demanda"
-        ])
- 
-    st.markdown("")
-    st.markdown("""
-    <div class="info-box">📎 <strong>Anexos:</strong> Caso tenha algum anexo ou referência que contribua a execução da sua solicitação, por favor, enviar por WhatsApp para (84) 996241616 (Número de Caroline). </em>.</div>
-    <div class="warning-box">🕐 <strong>Prazo de entrega:</strong> a ser definido após análise da demanda pela equipe. O retorno com o prazo será enviado por WhatsApp. </div>
-    """, unsafe_allow_html=True)
- 
-    col_btn, _ = st.columns([1, 3])
-    with col_btn:
-        enviar = st.button("📤  Enviar solicitação", type="primary", use_container_width=True)
- 
-    if enviar:
-        erros = []
-        if not nome.strip(): erros.append("Nome completo é obrigatório.")
-        elif len(nome.strip().split()) < 2: erros.append("Informe nome e sobrenome.")
-        if not setor: erros.append("Selecione o setor/departamento.")
-        if not objetivo.strip(): erros.append("Descreva o objetivo.")
-        if not contexto.strip(): erros.append("Descreva o contexto.")
-        if not resultado: erros.append("Selecione o resultado esperado.")
-        if not frequencia: erros.append("Selecione a frequência.")
- 
-        if erros:
-            for e in erros: st.error(f"⚠️ {e}")
-        else:
-            demandas = carregar_demandas()
-            nova = {
-                "id": int(datetime.now().timestamp() * 1000),
-                "data": datetime.now().strftime("%d/%m/%Y %H:%M"),
-                "nome": nome.strip(), "setor": setor, "tipo": tipo,
-                "objetivo": objetivo.strip(), "contexto": contexto.strip(),
-                "resultado": resultado, "frequencia": frequencia,
-                "status": "Aberta", "analista": "", "prazo": "",
-            }
-            demandas.insert(0, nova)
-            salvar_demandas(demandas)
-            st.success("✅ Solicitação enviada com sucesso!")
-            st.balloons()
- 
-# ══════════════════════════════════════════════════════════════════════════════
-# ABA 2 — PAINEL DO LÍDER
-# ══════════════════════════════════════════════════════════════════════════════
-with aba_lider:
- 
-    if st.session_state.logado_como != "lider":
-        st.markdown("""
-        <div class="lock-card">
-            <div style="font-size:2.5rem;margin-bottom:0.5rem">👑</div>
-            <h2>Painel do Analista Líder</h2>
-            <p>Acesso restrito. Digite a senha para continuar.</p>
-        </div>
-        """, unsafe_allow_html=True)
-        col_lk, _ = st.columns([1, 2])
-        with col_lk:
-            senha_lider = st.text_input("Senha do líder", type="password", key="inp_lider")
-            if st.button("🔐 Entrar", type="primary", use_container_width=True, key="btn_lider"):
-                if senha_lider == SENHA_LIDER:
-                    st.session_state.logado_como = "lider"
-                    st.rerun()
-                else:
-                    st.error("Senha incorreta.")
-    else:
-        demandas = carregar_demandas()
-        analistas = list(SENHA_ANALISTA.keys())
- 
-        st.markdown("### 👑 Painel do Analista Líder")
- 
-        total    = len(demandas)
-        abertas  = sum(1 for d in demandas if d["status"] == "Aberta")
-        execucao = sum(1 for d in demandas if d["status"] == "Em execução")
-        concl    = sum(1 for d in demandas if d["status"] == "Concluída")
- 
-        m1, m2, m3, m4 = st.columns(4)
-        with m1:
-            st.markdown(f'<div class="metric-card"><div class="num">{total}</div><div class="lbl">Total de demandas</div></div>', unsafe_allow_html=True)
-        with m2:
-            st.markdown(f'<div class="metric-card"><div class="num" style="color:#854F0B">{abertas}</div><div class="lbl">🟡 Abertas</div></div>', unsafe_allow_html=True)
-        with m3:
-            st.markdown(f'<div class="metric-card"><div class="num" style="color:#185FA5">{execucao}</div><div class="lbl">🔵 Em execução</div></div>', unsafe_allow_html=True)
-        with m4:
-            st.markdown(f'<div class="metric-card"><div class="num" style="color:#3B6D11">{concl}</div><div class="lbl">🟢 Concluídas</div></div>', unsafe_allow_html=True)
- 
-        st.markdown("---")
-        st.markdown("#### 📋 Gerenciar demandas")
- 
-        filtro_status   = st.selectbox("Filtrar por status", ["Todas", "Aberta", "Em execução", "Concluída"], key="filt_lider")
-        filtro_analista = st.selectbox("Filtrar por analista", ["Todos"] + analistas, key="filt_an_lider")
- 
-        lista = demandas
-        if filtro_status != "Todas":
-            lista = [d for d in lista if d["status"] == filtro_status]
-        if filtro_analista != "Todos":
-            lista = [d for d in lista if d.get("analista") == filtro_analista]
- 
-        st.markdown(f"**{len(lista)} demanda(s) exibida(s)**")
- 
-        if not lista:
-            st.info("Nenhuma demanda encontrada com os filtros selecionados.")
- 
-        for d in lista:
-            with st.expander(f"📄  {d['nome']}  ·  {d['tipo']}  ·  {d['data']}  ·  {'🟡 '+d['status'] if d['status']=='Aberta' else '🔵 '+d['status'] if d['status']=='Em execução' else '🟢 '+d['status']}"):
-                col_info, col_acao = st.columns([1, 1])
- 
-                with col_info:
-                    st.markdown(f"**Solicitante:** {d['nome']}")
-                    st.markdown(f"**Setor:** {d['setor']}  ·  **Tipo:** {d['tipo']}")
-                    st.markdown(f"**Resultado:** {d['resultado']}  ·  **Frequência:** {d['frequencia']}")
-                    st.markdown(f"**Enviado em:** {d['data']}")
-                    st.markdown("**Objetivo:**")
-                    st.info(d["objetivo"])
-                    st.markdown("**Contexto:**")
-                    st.info(d["contexto"])
- 
-                with col_acao:
-                    st.markdown("**⚙️ Atribuição do líder**")
- 
-                    novo_analista = st.selectbox(
-                        "Vincular analista responsável",
-                        [""] + analistas,
-                        index=([""] + analistas).index(d.get("analista", "") or ""),
-                        key=f"an_{d['id']}",
-                    )
-                    novo_prazo = st.date_input(
-                        "Prazo de entrega",
-                        value=datetime.strptime(d["prazo"], "%Y-%m-%d").date() if d.get("prazo") else None,
-                        key=f"prazo_{d['id']}",
-                        format="DD/MM/YYYY",
-                    )
-                    novo_status = st.selectbox(
-                        "Status",
-                        ["Aberta", "Em execução", "Concluída"],
-                        index=["Aberta", "Em execução", "Concluída"].index(d["status"]),
-                        key=f"st_{d['id']}",
-                    )
- 
-                    if st.button("💾 Salvar", key=f"salvar_{d['id']}", type="primary"):
-                        todas = carregar_demandas()
-                        for dem in todas:
-                            if dem["id"] == d["id"]:
-                                dem["analista"] = novo_analista
-                                dem["prazo"]    = str(novo_prazo) if novo_prazo else ""
-                                dem["status"]   = novo_status
-                                break
-                        salvar_demandas(todas)
-                        st.success("✅ Salvo!")
-                        st.rerun()
- 
-        if demandas:
-            st.markdown("---")
-            df = pd.DataFrame(demandas)
-            cols = ["data","nome","setor","tipo","objetivo","contexto","resultado","frequencia","status","analista","prazo"]
-            df = df[[c for c in cols if c in df.columns]]
-            df.columns = ["Data","Nome","Setor","Tipo","Objetivo","Contexto","Resultado","Frequência","Status","Analista","Prazo"]
-            csv = df.to_csv(index=False).encode("utf-8-sig")
-            st.download_button("⬇️ Exportar CSV", data=csv,
-                file_name=f"demandas_{datetime.now().strftime('%Y%m%d')}.csv", mime="text/csv")
- 
-        st.markdown("---")
-        st.markdown("#### 📊 Resumo por analista")
- 
-        for analista in analistas:
-            dem_analista = [d for d in demandas if d.get("analista") == analista]
-            ab  = sum(1 for d in dem_analista if d["status"] == "Aberta")
-            ex  = sum(1 for d in dem_analista if d["status"] == "Em execução")
-            co  = sum(1 for d in dem_analista if d["status"] == "Concluída")
-            tot = len(dem_analista)
- 
-            st.markdown(f"""
-            <div class="analista-card">
-                <h4>👤 {analista} &nbsp;·&nbsp; <span style="color:#6b7a8d;font-weight:400;font-size:0.85rem">{tot} demanda(s) atribuída(s)</span></h4>
-                <span class="badge-aberta">🟡 Abertas: {ab}</span>&nbsp;
-                <span class="badge-execucao">🔵 Em execução: {ex}</span>&nbsp;
-                <span class="badge-concluida">🟢 Concluídas: {co}</span>
-            </div>
-            """, unsafe_allow_html=True)
- 
- 
-# ══════════════════════════════════════════════════════════════════════════════
-# ABA 3 — PAINEL DO ANALISTA
-# ══════════════════════════════════════════════════════════════════════════════
-with aba_analista:
- 
-    analistas = list(SENHA_ANALISTA.keys())
-    logado_analista = st.session_state.logado_como if st.session_state.logado_como in analistas else None
- 
-    if not logado_analista:
-        st.markdown("""
-        <div class="lock-card">
-            <div style="font-size:2.5rem;margin-bottom:0.5rem">👤</div>
-            <h2>Painel do Analista</h2>
-            <p>Selecione seu nome e digite sua senha para acessar suas demandas.</p>
-        </div>
-        """, unsafe_allow_html=True)
-        col_ak, _ = st.columns([1, 2])
-        with col_ak:
-            sel_analista = st.selectbox("Selecione seu nome", [""] + analistas, key="sel_analista_login")
-            senha_an = st.text_input("Sua senha", type="password", key="inp_analista")
-            if st.button("🔐 Entrar", type="primary", use_container_width=True, key="btn_analista"):
-                if sel_analista and senha_an == SENHA_ANALISTA.get(sel_analista, ""):
-                    st.session_state.logado_como = sel_analista
-                    st.rerun()
-                else:
-                    st.error("Nome ou senha incorretos.")
-    else:
-        demandas = carregar_demandas()
-        minhas   = [d for d in demandas if d.get("analista") == logado_analista]
- 
-        st.markdown(f"### 👤 Olá, {logado_analista}!")
-        st.markdown(f"Você tem **{len(minhas)} demanda(s)** atribuída(s).")
- 
-        ab = sum(1 for d in minhas if d["status"] == "Aberta")
-        ex = sum(1 for d in minhas if d["status"] == "Em execução")
-        co = sum(1 for d in minhas if d["status"] == "Concluída")
- 
-        c1, c2, c3 = st.columns(3)
-        with c1:
-            st.markdown(f'<div class="metric-card"><div class="num" style="color:#854F0B">{ab}</div><div class="lbl">🟡 Abertas</div></div>', unsafe_allow_html=True)
-        with c2:
-            st.markdown(f'<div class="metric-card"><div class="num" style="color:#185FA5">{ex}</div><div class="lbl">🔵 Em execução</div></div>', unsafe_allow_html=True)
-        with c3:
-            st.markdown(f'<div class="metric-card"><div class="num" style="color:#3B6D11">{co}</div><div class="lbl">🟢 Concluídas</div></div>', unsafe_allow_html=True)
- 
-        st.markdown("---")
- 
-        filtro_an = st.selectbox("Filtrar por status", ["Todas", "Aberta", "Em execução", "Concluída"], key="filt_analista")
-        lista_an  = minhas if filtro_an == "Todas" else [d for d in minhas if d["status"] == filtro_an]
- 
-        if not lista_an:
-            st.info("Nenhuma demanda encontrada." if minhas else "Você ainda não tem demandas atribuídas. Aguarde o líder atribuir uma demanda para você.")
- 
-        for d in lista_an:
-            prazo_fmt = ""
-            if d.get("prazo"):
-                try:
-                    prazo_fmt = datetime.strptime(d["prazo"], "%Y-%m-%d").strftime("%d/%m/%Y")
-                except:
-                    prazo_fmt = d["prazo"]
- 
-            with st.expander(f"📄  {d['nome']}  ·  {d['tipo']}  ·  {d['status']}" + (f"  ·  ⏰ {prazo_fmt}" if prazo_fmt else "")):
-                col_det, col_st = st.columns([2, 1])
- 
-                with col_det:
-                    st.markdown(f"**Solicitante:** {d['nome']}")
-                    st.markdown(f"**Setor:** {d['setor']}  ·  **Tipo:** {d['tipo']}")
-                    st.markdown(f"**Resultado esperado:** {d['resultado']}  ·  **Frequência:** {d['frequencia']}")
-                    if prazo_fmt:
-                        st.markdown(f"**⏰ Prazo:** {prazo_fmt}")
-                    st.markdown(f"**Enviado em:** {d['data']}")
-                    st.markdown("**Objetivo:**")
-                    st.info(d["objetivo"])
-                    st.markdown("**Contexto:**")
-                    st.info(d["contexto"])
- 
-                with col_st:
-                    st.markdown("**Atualizar status**")
-                    novo_status_an = st.selectbox(
-                        "Status da demanda",
-                        ["Aberta", "Em execução", "Concluída"],
-                        index=["Aberta", "Em execução", "Concluída"].index(d["status"]),
-                        key=f"an_st_{d['id']}",
-                    )
-                    if st.button("💾 Atualizar status", key=f"an_salvar_{d['id']}", type="primary"):
-                        todas = carregar_demandas()
-                        for dem in todas:
-                            if dem["id"] == d["id"]:
-                                dem["status"] = novo_status_an
-                                break
-                        salvar_demandas(todas)
-                        st.success("✅ Status atualizado!")
-                        st.rerun()
- 
+
+# ── Salvar demandas estruturadas ─────────────────────────────────────────────
+def salvar_demandas(lista_demandas):
+    try:
+        sheet = conectar_planilha()
+        cabecalho_esperado = [
+            "id", "nome", "setor", "tipo", "objetivo", "contexto", 
+            "resultado", "frequencia", "prazo", "data", "status", "analista", "prioridade"
+        ]
+        
+        linhas_para_salvar = [cabecalho_esperado]
+        for d in lista_demandas:
+            linha = [str(d.get(col, "")) for col in cabecalho_esperado]
+            linhas_para_salvar.append(linha)
+            
+        sheet.clear()
+        sheet.update("A1", linhas_para_salvar)
+    except Exception as e:
+        st.error(f"Erro ao salvar dados na planilha: {e}")
+
+# ── INTERFACE DO APLICATIVO ──────────────────────────────────────────────────
+st.title("📊 Painel de Demandas — Análise de Dados")
+
+aba_solicitacao, aba_paineis = st.tabs(["📩 Nova Solicitação", "🔒 Painéis Restritos"])
+
+# ABA 1: FORMULÁRIO DE SOLICITAÇÃO
+with aba_solicitacao:
+    st.header("Enviar Nova Demanda")
+    with st.form("form_demanda", clear_on_submit=True):
+        nome = st.text_input("Seu Nome:")
+        setor = st.selectbox("Seu Setor:", ["Comercial", "Financeiro", "Operações", "RH", "Diretoria", "Outro"])
+        tipo = st.selectbox("Tipo de Demanda:", ["Novo Relatório/Dashboard", "Ajuste em Dashboard Existente", "Extração de Dados (Ad-hoc)", "Automação", "Outro"])
+        objetivo = st.text_area("Qual o objetivo principal dessa análise? (O que você quer descobrir?)")
+        contexto = st.text_area("Contexto da solicitação (Explique o cenário ou problema atual):")
+        resultado = st.text_area("Qual o resultado prático esperado após a entrega?")
+        frequencia = st.selectbox("Frequência de uso:", ["Uma única vez (Ad-hoc)", "Diário", "Semanal", "Mensal", "Contínuo"])
+        prazo = st.date_input("Prazo desejado para entrega:", min_value=datetime.today())
+        
+        enviar = st.form_submit_button("🚀 Enviar Solicitação")
+        
+        if enviar:
+            if nome and objetivo:
+                demandas_atuais = carregar_demandas()
+                novo_id = max([d["id"] for d in demandas_atuais], default=0) + 1
+                
+                nova_demanda = {
+                    "id": novo_id,
+                    "nome": nome,
+                    "setor": setor,
+                    "tipo": tipo,
+                    "objetivo": objetivo,
+                    "contexto": contexto,
+                    "resultado": resultado,
+                    "frequencia": frequencia,
+                    "prazo": prazo.strftime("%Y-%m-%d"),
+                    "data": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+                    "status": "Aberta",
+                    "analista": "Não designado",
+                    "prioridade": "Não definida"
+                }
+                
+                demandas_atuais.append(nova_demanda)
+                salvar_demandas(demandas_atuais)
+                st.success(f"🎉 Solicitação enviada com sucesso! ID da Demanda: {novo_id}")
+            else:
+                st.warning("⚠️ preencha os campos obrigatórios (Nome e Objetivo).")
+
+# ABA 2: PAINÉIS RESTRITOS (LÍDER E ANALISTAS)
+with aba_paineis:
+    perfil = st.radio("Selecione seu perfil:", ["Analista", "Líder do Setor"], horizontal=True)
+    
+    demandas = carregar_demandas()
+    
+    if perfil == "Analista":
+        analista_sel = st.selectbox("Selecione seu nome:", list(SENHA_ANALISTA.keys()))
+        senha_an = st.text_input("Senha do Analista:", type="password", key="senha_analista")
+        
+        if senha_an == SENHA_ANALISTA[analista_sel]:
+            st.success(f"Olá, {analista_sel}! Veja suas demandas abaixo:")
+            
+            filtradas = [d for d in demandas if d.get("analista") == analista_sel]
+            
+            if not filtradas:
+                st.info("Você não tem demandas atribuídas no momento.")
+            else:
+                for d in filtradas:
+                    with st.container(border=True):
+                        col_txt, col_st = st.columns([3, 1])
+                        with col_txt:
+                            st.markdown(f"### Demanda #{d['id']} — {d['tipo']}")
+                            st.markdown(f"**Solicitante:** {d['nome']} ({d['setor']})")
+                            st.markdown(f"**Status:** `{d['status']}` | **Prioridade:** `{d['prioridade']}`")
+                            st.markdown(f"**Objetivo:** *{d['objetivo']}*")
+                        with col_st:
+                            novo_status = st.selectbox("Atualizar Status:", ["Aberta", "Em execução", "Concluída"], index=["Aberta", "Em execução", "Concluída"].index(d["status"]) if d["status"] in ["Aberta", "Em execução", "Concluída"] else 0, key=f"status_{d['id']}")
+                            if st.button("Salvar", key=f"btn_an_{d['id']}"):
+                                for dem in demandas:
+                                    if dem["id"] == d["id"]:
+                                        dem["status"] = novo_status
+                                salvar_demandas(demandas)
+                                st.success("Atualizado!")
+                                st.rerun()
+                                
+    elif perfil == "Líder do Setor":
+        senha_lid = st.text_input("Senha do Líder:", type="password", key="senha_lider")
+        if senha_lid == SENHA_LIDER:
+            st.success("Painel de Gestão Liberado!")
+            
+            if not demandas:
+                st.info("Nenhuma demanda registrada no sistema.")
+            else:
+                for d in demandas:
+                    with st.container(border=True):
+                        c1, c2 = st.columns([3, 1])
+                        with c1:
+                            st.markdown(f"### #{d['id']} - {d['tipo']} (De: {d['nome']})")
+                            st.markdown(f"**Objetivo:** {d['objetivo']}")
+                            st.markdown(f"**Designado para:** `{d['analista']}` | **Prioridade:** `{d['prioridade']}` | **Status:** `{d['status']}`")
+                        with c2:
+                            novo_an = st.selectbox("Designar Analista:", ["Não designado"] + list(SENHA_ANALISTA.keys()), index=(["Não designado"] + list(SENHA_ANALISTA.keys())).index(d["analista"]) if d["analista"] in (["Não designado"] + list(SENHA_ANALISTA.keys())) else 0, key=f"lead_an_{d['id']}")
+                            nova_prio = st.selectbox("Definir Prioridade:", ["Não definida", "Baixa", "Média", "Alta"], index=["Não definida", "Baixa", "Média", "Alta"].index(d["prioridade"]) if d["prioridade"] in ["Não definida", "Baixa", "Média", "Alta"] else 0, key=f"lead_prio_{d['id']}")
+                            
+                            if st.button("Atribuir", key=f"btn_lead_{d['id']}"):
+                                for dem in demandas:
+                                    if dem["id"] == d["id"]:
+                                        dem["analista"] = novo_an
+                                        dem["prioridade"] = nova_prio
+                                salvar_demandas(demandas)
+                                st.success("Atribuído!")
+                                st.rerun()
