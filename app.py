@@ -50,32 +50,41 @@ def carregar_demandas():
         sheet = conectar_planilha()
         linhas = sheet.get_all_values()
         
-        # 🛡️ PROTEÇÃO: Se a planilha estiver totalmente vazia ou tiver apenas o cabeçalho
+        # Se a planilha não tiver nada ou só tiver o cabeçalho, retorna lista vazia de forma segura
         if not linhas or len(linhas) <= 1:
             return []
             
-        cabecalho = linhas[0]
-        demandas = []
+        # Definimos o cabeçalho exato que o código espera, limpando qualquer erro da planilha
+        cabecalho_esperado = [
+            "id", "nome", "setor", "tipo", "objetivo", "contexto", 
+            "resultado", "frequencia", "prazo", "data", "status", "analista", "prioridade"
+        ]
         
+        demandas = []
         for l in linhas[1:]:
-            # Garante que a linha tem exatamente o mesmo tamanho do cabeçalho para não dar erro
-            if len(l) < len(cabecalho):
-                l = l + [""] * (len(cabecalho) - len(l))
-            elif len(l) > len(cabecalho):
-                l = l[:len(cabecalho)]
+            # Se a linha capturada estiver completamente vazia, pula ela
+            if not any(l):
+                continue
                 
-            dados = dict(zip(cabecalho, l))
-            # Garante que o ID seja tratado como número se existir
-            if "id" in dados and dados["id"]:
-                try:
-                    dados["id"] = int(dados["id"])
-                except:
-                    pass
+            # Ajusta o tamanho da linha para bater exatamente com o cabeçalho esperado
+            if len(l) < len(cabecalho_esperado):
+                l = l + [""] * (len(cabecalho_esperado) - len(l))
+            else:
+                l = l[:len(cabecalho_esperado)]
+                
+            dados = dict(zip(cabecalho_esperado, l))
+            
+            # Converte o ID para número com segurança
+            try:
+                dados["id"] = int(dados["id"]) if dados["id"] else 0
+            except:
+                dados["id"] = 0
+                
             demandas.append(dados)
             
         return demandas
     except Exception as e:
-        st.error(f"Erro ao carregar dados da planilha: {e}")
+        st.error(f"Erro crítico ao carregar dados: {e}")
         return []
  
 def salvar_demandas(demandas):
