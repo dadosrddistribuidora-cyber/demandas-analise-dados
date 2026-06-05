@@ -25,11 +25,10 @@ PLANILHA_ID = st.secrets["sheets"]["id"]
 def conectar_planilha():
     chave_bruta = st.secrets["gcp_service_account"]["private_key"]
     
-    # Tratamento definitivo para quebras de linha da chave PEM
     if "\\n" in chave_bruta:
         chave_corrigida = chave_bruta.replace("\\n", "\n")
     else:
-        linhas_chave = [linha.strip() for line in chave_bruta.split("\n") if linha.strip()]
+        linhas_chave = [linha.strip() for linha in chave_bruta.split("\n") if linha.strip()]
         chave_corrigida = "\n".join(linhas_chave)
 
     info = {
@@ -55,7 +54,7 @@ def conectar_planilha():
     client = gspread.authorize(creds)
     return client.open_by_key(PLANILHA_ID).worksheet("Demandas")
 
-# ── Carregar demandas com proteção contra cabeçalhos/linhas vazias ──────────
+# ── Funções de manipulação de dados de forma segura ──────────────────────────
 def carregar_demandas():
     try:
         sheet = conectar_planilha()
@@ -89,7 +88,6 @@ def carregar_demandas():
         st.error(f"Erro ao carregar dados da planilha: {e}")
         return []
 
-# ── Salvar demandas estruturadas ─────────────────────────────────────────────
 def salvar_demandas(lista_demandas):
     try:
         sheet = conectar_planilha()
@@ -108,28 +106,36 @@ def salvar_demandas(lista_demandas):
     except Exception as e:
         st.error(f"Erro ao salvar dados na planilha: {e}")
 
-# ── INTERFACE DO APLICATIVO ──────────────────────────────────────────────────
-st.title("📊 Painel de Demandas — Análise de Dados")
+# ── INTERFACE ORIGINAL RESTAURADA ────────────────────────────────────────────
+st.title("📊 Formulário de Demandas — Análise de Dados")
+st.markdown("---")
 
 aba_solicitacao, aba_paineis = st.tabs(["📩 Nova Solicitação", "🔒 Painéis Restritos"])
 
-# ABA 1: FORMULÁRIO DE SOLICITAÇÃO
+# ABA 1: FORMULÁRIO COM SEU LAYOUT ORIGINAL
 with aba_solicitacao:
-    st.header("Enviar Nova Demanda")
+    st.markdown("### 📝 Preencha os dados abaixo para abrir um chamado")
+    
     with st.form("form_demanda", clear_on_submit=True):
-        nome = st.text_input("Seu Nome:")
-        setor = st.selectbox("Seu Setor:", ["Comercial", "Financeiro", "Operações", "RH", "Diretoria", "Outro"])
-        tipo = st.selectbox("Tipo de Demanda:", ["Novo Relatório/Dashboard", "Ajuste em Dashboard Existente", "Extração de Dados (Ad-hoc)", "Automação", "Outro"])
-        objetivo = st.text_area("Qual o objetivo principal dessa análise? (O que você quer descobrir?)")
-        contexto = st.text_area("Contexto da solicitação (Explique o cenário ou problema atual):")
-        resultado = st.text_area("Qual o resultado prático esperado após a entrega?")
-        frequencia = st.selectbox("Frequência de uso:", ["Uma única vez (Ad-hoc)", "Diário", "Semanal", "Mensal", "Contínuo"])
-        prazo = st.date_input("Prazo desejado para entrega:", min_value=datetime.today())
+        col1, col2 = st.columns(2)
         
-        enviar = st.form_submit_button("🚀 Enviar Solicitação")
+        with col1:
+            nome = st.text_input("Seu Nome *", placeholder="Ex: João Silva")
+            setor = st.selectbox("Seu Setor *", ["Comercial", "Financeiro", "Operações", "RH", "Diretoria", "Outro"])
+            tipo = st.selectbox("Tipo de Demanda *", ["Novo Relatório/Dashboard", "Ajuste em Dashboard Existente", "Extração de Dados (Ad-hoc)", "Automação", "Outro"])
+            frequencia = st.selectbox("Frequência de uso *", ["Uma única vez (Ad-hoc)", "Diário", "Semanal", "Mensal", "Contínuo"])
+            prazo = st.date_input("Prazo desejado para entrega *", min_value=datetime.today())
+            
+        with col2:
+            objetivo = st.text_area("Qual o objetivo principal dessa análise? * (O que você quer descobrir?)", height=68, placeholder="Explique qual decisão de negócio será tomada com esses dados.")
+            contexto = st.text_area("Contexto da solicitação * (Explique o cenário ou problema atual)", height=68, placeholder="Quais bases de dados envolvem isso? Como é feito hoje?")
+            resultado = st.text_area("Qual o resultado prático esperado após a entrega? *", height=68, placeholder="Ex: Reduzir tempo de análise manual, aumentar conversão, etc.")
+            
+        st.markdown("<small>* Campos obrigatórios</small>", unsafe_allow_html=True)
+        enviar = st.form_submit_button("🚀 Enviar Solicitação para a Engenharia de Dados", type="primary")
         
         if enviar:
-            if nome and objetivo:
+            if nome and objetivo and contexto and resultado:
                 demandas_atuais = carregar_demandas()
                 novo_id = max([d["id"] for d in demandas_atuais], default=0) + 1
                 
@@ -153,12 +159,11 @@ with aba_solicitacao:
                 salvar_demandas(demandas_atuais)
                 st.success(f"🎉 Solicitação enviada com sucesso! ID da Demanda: {novo_id}")
             else:
-                st.warning("⚠️ preencha os campos obrigatórios (Nome e Objetivo).")
+                st.warning("⚠️ Por favor, preencha todos os campos obrigatórios.")
 
 # ABA 2: PAINÉIS RESTRITOS (LÍDER E ANALISTAS)
 with aba_paineis:
     perfil = st.radio("Selecione seu perfil:", ["Analista", "Líder do Setor"], horizontal=True)
-    
     demandas = carregar_demandas()
     
     if perfil == "Analista":
@@ -167,7 +172,6 @@ with aba_paineis:
         
         if senha_an == SENHA_ANALISTA[analista_sel]:
             st.success(f"Olá, {analista_sel}! Veja suas demandas abaixo:")
-            
             filtradas = [d for d in demandas if d.get("analista") == analista_sel]
             
             if not filtradas:
@@ -180,7 +184,8 @@ with aba_paineis:
                             st.markdown(f"### Demanda #{d['id']} — {d['tipo']}")
                             st.markdown(f"**Solicitante:** {d['nome']} ({d['setor']})")
                             st.markdown(f"**Status:** `{d['status']}` | **Prioridade:** `{d['prioridade']}`")
-                            st.markdown(f"**Objetivo:** *{d['objetivo']}*")
+                            st.markdown(f"**Objetivo:**")
+                            st.info(d["objetivo"])
                         with col_st:
                             novo_status = st.selectbox("Atualizar Status:", ["Aberta", "Em execução", "Concluída"], index=["Aberta", "Em execução", "Concluída"].index(d["status"]) if d["status"] in ["Aberta", "Em execução", "Concluída"] else 0, key=f"status_{d['id']}")
                             if st.button("Salvar", key=f"btn_an_{d['id']}"):
@@ -204,7 +209,8 @@ with aba_paineis:
                         c1, c2 = st.columns([3, 1])
                         with c1:
                             st.markdown(f"### #{d['id']} - {d['tipo']} (De: {d['nome']})")
-                            st.markdown(f"**Objetivo:** {d['objetivo']}")
+                            st.markdown(f"**Objetivo:**")
+                            st.info(d["objetivo"])
                             st.markdown(f"**Designado para:** `{d['analista']}` | **Prioridade:** `{d['prioridade']}` | **Status:** `{d['status']}`")
                         with c2:
                             novo_an = st.selectbox("Designar Analista:", ["Não designado"] + list(SENHA_ANALISTA.keys()), index=(["Não designado"] + list(SENHA_ANALISTA.keys())).index(d["analista"]) if d["analista"] in (["Não designado"] + list(SENHA_ANALISTA.keys())) else 0, key=f"lead_an_{d['id']}")
