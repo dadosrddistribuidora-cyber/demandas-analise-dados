@@ -47,10 +47,35 @@ def conectar_planilha():
  
 def carregar_demandas():
     try:
-        registros = conectar_planilha().get_all_records()
-        return registros if registros else []
+        sheet = conectar_planilha()
+        linhas = sheet.get_all_values()
+        
+        # 🛡️ PROTEÇÃO: Se a planilha estiver totalmente vazia ou tiver apenas o cabeçalho
+        if not linhas or len(linhas) <= 1:
+            return []
+            
+        cabecalho = linhas[0]
+        demandas = []
+        
+        for l in linhas[1:]:
+            # Garante que a linha tem exatamente o mesmo tamanho do cabeçalho para não dar erro
+            if len(l) < len(cabecalho):
+                l = l + [""] * (len(cabecalho) - len(l))
+            elif len(l) > len(cabecalho):
+                l = l[:len(cabecalho)]
+                
+            dados = dict(zip(cabecalho, l))
+            # Garante que o ID seja tratado como número se existir
+            if "id" in dados and dados["id"]:
+                try:
+                    dados["id"] = int(dados["id"])
+                except:
+                    pass
+            demandas.append(dados)
+            
+        return demandas
     except Exception as e:
-        st.warning(f"Não foi possível carregar as demandas: {e}")
+        st.error(f"Erro ao carregar dados da planilha: {e}")
         return []
  
 def salvar_demandas(demandas):
