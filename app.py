@@ -1,8 +1,8 @@
 import streamlit as st
 import pandas as pd
 from datetime import datetime
-import json
-import os
+import gspread
+from google.oauth2.service_account import Credentials
 
 st.set_page_config(
     page_title="Solicitações — Análise de Dados",
@@ -19,17 +19,47 @@ SENHA_ANALISTA = {
     "Edson": "edson123",
 }
 
-ARQUIVO = "demandas.json"
+PLANILHA_ID = st.secrets["sheets"]["id"]
+
+@st.cache_resource
+def conectar_planilha():
+    creds = Credentials.from_service_account_info(
+        dict(st.secrets["gcp_service_account"]),
+        scopes=[
+            "https://www.googleapis.com/auth/spreadsheets",
+            "https://www.googleapis.com/auth/drive",
+        ],
+    )
+    cliente = gspread.authorize(creds)
+    return cliente.open_by_key(PLANILHA_ID).sheet1
 
 def carregar_demandas():
-    if os.path.exists(ARQUIVO):
-        with open(ARQUIVO, "r", encoding="utf-8") as f:
-            return json.load(f)
-    return []
+    try:
+        registros = conectar_planilha().get_all_records()
+        return registros if registros else []
+    except Exception:
+        return []
 
 def salvar_demandas(demandas):
-    with open(ARQUIVO, "w", encoding="utf-8") as f:
-        json.dump(demandas, f, ensure_ascii=False, indent=2, default=str)
+    sheet = conectar_planilha()
+    cabecalho = [["id","data","nome","setor","tipo","objetivo","contexto","resultado","frequencia","status","analista","prazo"]]
+    linhas = [[
+        d.get("id",""),
+        d.get("data",""),
+        d.get("nome",""),
+        d.get("setor",""),
+        d.get("tipo",""),
+        d.get("objetivo",""),
+        d.get("contexto",""),
+        d.get("resultado",""),
+        d.get("frequencia",""),
+        d.get("status",""),
+        d.get("analista",""),
+        d.get("prazo","")
+    ] for d in demandas]
+
+    sheet.clear()
+    sheet.update(cabecalho + linhas)
 
 # ── CSS ─────────────────────────────────────────────────────────────────────
 st.markdown("""
