@@ -163,8 +163,8 @@ with aba_form:
 
     st.markdown("")
     st.markdown("""
-    <div class="info-box">📎 <strong>Anexos:</strong> Envie para <strong>analise.dados@empresa.com.br</strong> com o assunto: <em>Anexo – [seu nome]</em>.</div>
-    <div class="warning-box">🕐 <strong>Prazo de entrega:</strong> a ser definido após análise da demanda pela equipe.</div>
+    <div class="info-box">📎 <strong>Anexos:</strong> Caso tenha algum anexo ou referência que contribua a execução da sua solicitação, por favor, enviar por WhatsApp para (84) 996241616 (Número de Caroline). </em>.</div>
+    <div class="warning-box">🕐 <strong>Prazo de entrega:</strong> a ser definido após análise da demanda pela equipe. O retorno com o prazo será enviado por WhatsApp. </div>
     """, unsafe_allow_html=True)
 
     col_btn, _ = st.columns([1, 3])
