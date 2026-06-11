@@ -456,37 +456,58 @@ with aba_lider:
                 with col_acao:
                     st.markdown("**⚙️ Atribuição do líder**")
  
-                    novo_analista = st.selectbox(
-                        "Vincular analista responsável",
-                        [""] + analistas,
-                        index=([""] + analistas).index(d.get("analista", "") or ""),
-                        key=f"an_{d['id']}",
-                    )
-                    novo_prazo = st.date_input(
-                        "Prazo de entrega",
-                        value=datetime.strptime(d["prazo"], "%Y-%m-%d").date() if d.get("prazo") else None,
-                        key=f"prazo_{d['id']}",
-                        format="DD/MM/YYYY",
-                    )
-                    novo_status = st.selectbox(
-                        "Status",
-                        ["Aberta", "Em execução", "Concluída"],
-                        index=["Aberta", "Em execução", "Concluída"].index(d["status"]),
-                        key=f"st_{d['id']}",
-                    )
+                    # Lider só pode editar se ainda não atribuiu (analista vazio e status Aberta)
+                    ja_atribuido = bool(d.get("analista")) and d["status"] != "Aberta"
+                    lider_pode_editar = not ja_atribuido
  
-                    if st.button("💾 Salvar", key=f"salvar_{d['id']}", type="primary"):
-                        todas = carregar_demandas()
-                        for dem in todas:
-                            if dem["id"] == d["id"]:
-                                dem["analista"] = novo_analista
-                                dem["prazo"]    = str(novo_prazo) if novo_prazo else ""
-                                dem["status"]   = novo_status
-                                break
-                        salvar_demandas(todas)
-                        st.session_state.expander_aberto_lider = None  # fecha todos após salvar
-                        st.success("✅ Salvo!")
-                        st.rerun()
+                    if lider_pode_editar:
+                        novo_analista = st.selectbox(
+                            "Vincular analista responsável",
+                            [""] + analistas,
+                            index=([""] + analistas).index(d.get("analista", "") or ""),
+                            key=f"an_{d['id']}",
+                        )
+                        novo_prazo = st.date_input(
+                            "Prazo de entrega",
+                            value=datetime.strptime(d["prazo"], "%Y-%m-%d").date() if d.get("prazo") else None,
+                            key=f"prazo_{d['id']}",
+                            format="DD/MM/YYYY",
+                        )
+ 
+                        if st.button("💾 Salvar atribuição", key=f"salvar_{d['id']}", type="primary"):
+                            if not novo_analista:
+                                st.error("⚠️ Selecione um analista antes de salvar.")
+                            else:
+                                todas = carregar_demandas()
+                                for dem in todas:
+                                    if dem["id"] == d["id"]:
+                                        dem["analista"] = novo_analista
+                                        dem["prazo"]    = str(novo_prazo) if novo_prazo else ""
+                                        dem["status"]   = "Aberta"
+                                        break
+                                salvar_demandas(todas)
+                                st.session_state.expander_aberto_lider = None
+                                st.success("✅ Demanda atribuída!")
+                                st.rerun()
+                    else:
+                        # Já foi atribuída — exibe somente leitura
+                        analista_atual = d.get("analista", "—")
+                        prazo_fmt = ""
+                        if d.get("prazo"):
+                            try:
+                                prazo_fmt = datetime.strptime(d["prazo"], "%Y-%m-%d").strftime("%d/%m/%Y")
+                            except:
+                                prazo_fmt = d["prazo"]
+ 
+                        st.markdown(f"**Analista:** {analista_atual}")
+                        if prazo_fmt:
+                            st.markdown(f"**Prazo:** {prazo_fmt}")
+                        st.markdown(f"**Status:** {d['status']}")
+                        st.markdown("""
+                        <div style="background:#FEF3E2;border-left:4px solid #F4A62A;border-radius:0 6px 6px 0;
+                        padding:0.6rem 0.9rem;font-size:0.83rem;color:#7a5000;margin-top:0.5rem">
+                        🔒 Esta demanda já foi atribuída. O status só pode ser alterado pelo analista responsável.
+                        </div>""", unsafe_allow_html=True)
  
         # ── Exportar ─────────────────────────────────────────────────────────
         if demandas:
