@@ -246,6 +246,8 @@ if "logado_como" not in st.session_state:
     st.session_state.logado_como = None  # None | "lider" | nome_analista
 if "form_enviado" not in st.session_state:
     st.session_state.form_enviado = False
+if "expander_aberto_lider" not in st.session_state:
+    st.session_state.expander_aberto_lider = None
  
 # ══════════════════════════════════════════════════════════════════════════════
 # CABEÇALHO
@@ -430,7 +432,15 @@ with aba_lider:
             st.info("Nenhuma demanda encontrada com os filtros selecionados.")
  
         for d in lista:
-            with st.expander(f"📄  {d['nome']}  ·  {d['tipo']}  ·  {d['data']}  ·  {'🟡 '+d['status'] if d['status']=='Aberta' else '🔵 '+d['status'] if d['status']=='Em execução' else '🟢 '+d['status']}"):
+            esta_aberto = st.session_state.expander_aberto_lider == d["id"]
+            icone_status = '🟡 '+d['status'] if d['status']=='Aberta' else '🔵 '+d['status'] if d['status']=='Em execução' else '🟢 '+d['status']
+            titulo = f"📄  {d['nome']}  ·  {d['tipo']}  ·  {d['data']}  ·  {icone_status}"
+ 
+            with st.expander(titulo, expanded=esta_aberto):
+                # Detecta quando o usuário abre manualmente (esta_aberto era False mas agora está dentro)
+                if not esta_aberto:
+                    st.session_state.expander_aberto_lider = d["id"]
+ 
                 col_info, col_acao = st.columns([1, 1])
  
                 with col_info:
@@ -474,6 +484,7 @@ with aba_lider:
                                 dem["status"]   = novo_status
                                 break
                         salvar_demandas(todas)
+                        st.session_state.expander_aberto_lider = None  # fecha todos após salvar
                         st.success("✅ Salvo!")
                         st.rerun()
  
