@@ -244,6 +244,8 @@ html, body, [class*="css"] { font-family: 'Inter', sans-serif; }
 # ── Inicializa session state ─────────────────────────────────────────────────
 if "logado_como" not in st.session_state:
     st.session_state.logado_como = None  # None | "lider" | nome_analista
+if "form_enviado" not in st.session_state:
+    st.session_state.form_enviado = False
  
 # ══════════════════════════════════════════════════════════════════════════════
 # CABEÇALHO
@@ -276,6 +278,17 @@ aba_form, aba_lider, aba_analista = st.tabs([
 # ABA 1 — FORMULÁRIO DO SOLICITANTE
 # ══════════════════════════════════════════════════════════════════════════════
 with aba_form:
+ 
+    # Se acabou de enviar com sucesso, mostra confirmação e botão para nova solicitação
+    if st.session_state.form_enviado:
+        st.success("✅ Sua solicitação foi enviada com sucesso!")
+        st.balloons()
+        st.markdown("A equipe de Análise de Dados receberá sua demanda e entrará em contato pelo WhatsApp com o prazo de entrega.")
+        if st.button("📝 Fazer nova solicitação", type="primary"):
+            st.session_state.form_enviado = False
+            st.rerun()
+        st.stop()
+ 
     st.markdown("### Nova solicitação")
     st.markdown("Preencha todos os campos para registrar sua demanda.")
     st.markdown("")
@@ -284,36 +297,36 @@ with aba_form:
         st.markdown("**👤 Identificação**")
         col1, col2 = st.columns(2)
         with col1:
-            nome = st.text_input("Nome completo *", placeholder="Nome e sobrenome")
+            nome = st.text_input("Nome completo *", placeholder="Nome e sobrenome", key="f_nome")
         with col2:
             setor = st.selectbox("Setor / Departamento *", options=[
                 "", "Comercial", "Educação", "Faturamento", "Financeiro",
                 "Logística", "Marketing", "Televendas", "Direção", "Outro"
-            ])
+            ], key="f_setor")
  
     st.markdown("---")
     st.markdown("**📋 Tipo de solicitação**")
     tipo = st.radio("", options=[
         "Relatório", "Dashboard", "Extração de dados", "Indicadores / KPIs",
         "Automação de processo", "Correção / Ajuste de relatório", "Estudo / Análise específica",
-    ], horizontal=True, label_visibility="collapsed")
+    ], horizontal=True, label_visibility="collapsed", key="f_tipo")
  
     st.markdown("---")
     st.markdown("**📝 Detalhes**")
     objetivo = st.text_area("Objetivo da solicitação *",
-        placeholder="Descreva de forma clara o que precisa ser desenvolvido ou analisado...", height=100)
+        placeholder="Descreva de forma clara o que precisa ser desenvolvido ou analisado...", height=100, key="f_objetivo")
     contexto = st.text_area("Contexto do negócio *",
-        placeholder="Explique o motivo da solicitação e qual decisão ou processo será impactado...", height=100)
+        placeholder="Explique o motivo da solicitação e qual decisão ou processo será impactado...", height=100, key="f_contexto")
  
     st.markdown("---")
     st.markdown("**📦 Entrega**")
     col3, col4 = st.columns(2)
     with col3:
-        resultado = st.selectbox("Resultado esperado *", options=["", "Excel", "Dashboard", "PDF", "Outro"])
+        resultado = st.selectbox("Resultado esperado *", options=["", "Excel", "Dashboard", "PDF", "Outro"], key="f_resultado")
     with col4:
         frequencia = st.selectbox("Frequência de entrega *", options=[
             "", "Solicitação única", "Diária", "Semanal", "Quinzenal", "Mensal", "Sob demanda"
-        ])
+        ], key="f_frequencia")
  
     st.markdown("")
     st.markdown("""
@@ -350,8 +363,7 @@ with aba_form:
             }
             demandas.insert(0, nova)
             salvar_demandas(demandas)
-            st.success("✅ Solicitação enviada com sucesso!")
-            st.balloons()
+            st.session_state.form_enviado = True
             st.rerun()
  
 # ══════════════════════════════════════════════════════════════════════════════
