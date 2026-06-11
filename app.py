@@ -417,64 +417,60 @@ with aba_lider:
         st.markdown("---")
         st.markdown("#### 📋 Gerenciar demandas")
  
-        filtro_status   = st.selectbox("Filtrar por status", ["Todas", "Aberta", "Em execução", "Concluída"], key="filt_lider")
-        filtro_analista = st.selectbox("Filtrar por analista", ["Todos"] + analistas, key="filt_an_lider")
+        filtro_status   = st.selectbox("Filtrar por status (Aplica-se apenas às Atribuídas)", ["Todas", "Aberta", "Em execução", "Concluída"], key="filt_lider")
+        filtro_analista = st.selectbox("Filtrar por analista (Aplica-se apenas às Atribuídas)", ["Todos"] + analistas, key="filt_an_lider")
  
-        lista = demandas
+        # Separação das listas baseada na atribuição do analista
+        demandas_novas = [d for d in demandas if not d.get("analista")]
+        demandas_atribuidas = [d for d in demandas if d.get("analista")]
+        
+        # Aplica os filtros apenas na lista de atribuídas
         if filtro_status != "Todas":
-            lista = [d for d in lista if d["status"] == filtro_status]
+            demandas_atribuidas = [d for d in demandas_atribuidas if d["status"] == filtro_status]
         if filtro_analista != "Todos":
-            lista = [d for d in lista if d.get("analista") == filtro_analista]
+            demandas_atribuidas = [d for d in demandas_atribuidas if d.get("analista") == filtro_analista]
  
-        st.markdown(f"**{len(lista)} demanda(s) exibida(s)**")
+        # ── SEÇÃO 1: DEMANDAS NOVAS ──────────────────────────────────────────
+        st.markdown(f"### 📥 Novas Demandas (Aguardando Atribuição) — **{len(demandas_novas)}**")
  
-        if not lista:
-            st.info("Nenhuma demanda encontrada com os filtros selecionados.")
+        if not demandas_novas:
+            st.info("Não há nenhuma nova demanda aguardando atribuição no momento.")
+        else:
+            for d in demandas_novas:
+                esta_aberto = st.session_state.expander_aberto_lider == d["id"]
+                icone_status = '🟡 Aguardando Analista'
+                titulo = f"🆕 📄 {d['nome']} · {d['tipo']} · {d['data']} · {icone_status}"
  
-        for d in lista:
-            esta_aberto = st.session_state.expander_aberto_lider == d["id"]
-            icone_status = '🟡 '+d['status'] if d['status']=='Aberta' else '🔵 '+d['status'] if d['status']=='Em execução' else '🟢 '+d['status']
-            titulo = f"📄  {d['nome']}  ·  {d['tipo']}  ·  {d['data']}  ·  {icone_status}"
+                with st.expander(titulo, expanded=esta_aberto):
+                    if not esta_aberto:
+                        st.session_state.expander_aberto_lider = d["id"]
  
-            with st.expander(titulo, expanded=esta_aberto):
-                # Detecta quando o usuário abre manualmente (esta_aberto era False mas agora está dentro)
-                if not esta_aberto:
-                    st.session_state.expander_aberto_lider = d["id"]
+                    col_info, col_acao = st.columns([1, 1])
+                    with col_info:
+                        st.markdown(f"**Solicitante:** {d['nome']}")
+                        st.markdown(f"**Setor:** {d['setor']} · **Tipo:** {d['tipo']}")
+                        st.markdown(f"**Resultado:** {d['resultado']} · **Frequência:** {d['frequencia']}")
+                        st.markdown(f"**Enviado em:** {d['data']}")
+                        st.markdown("**Objetivo:**")
+                        st.info(d["objetivo"])
+                        st.markdown("**Contexto:**")
+                        st.info(d["contexto"])
  
-                col_info, col_acao = st.columns([1, 1])
- 
-                with col_info:
-                    st.markdown(f"**Solicitante:** {d['nome']}")
-                    st.markdown(f"**Setor:** {d['setor']}  ·  **Tipo:** {d['tipo']}")
-                    st.markdown(f"**Resultado:** {d['resultado']}  ·  **Frequência:** {d['frequencia']}")
-                    st.markdown(f"**Enviado em:** {d['data']}")
-                    st.markdown("**Objetivo:**")
-                    st.info(d["objetivo"])
-                    st.markdown("**Contexto:**")
-                    st.info(d["contexto"])
- 
-                with col_acao:
-                    st.markdown("**⚙️ Atribuição do líder**")
- 
-                    # Lider só pode editar se ainda não atribuiu (analista vazio e status Aberta)
-                    ja_atribuido = bool(d.get("analista")) and d["status"] != "Aberta"
-                    lider_pode_editar = not ja_atribuido
- 
-                    if lider_pode_editar:
+                    with col_acao:
+                        st.markdown("**⚙️ Atribuição do líder**")
                         novo_analista = st.selectbox(
                             "Vincular analista responsável",
                             [""] + analistas,
-                            index=([""] + analistas).index(d.get("analista", "") or ""),
-                            key=f"an_{d['id']}",
+                            key=f"an_nova_{d['id']}",
                         )
                         novo_prazo = st.date_input(
                             "Prazo de entrega",
-                            value=datetime.strptime(d["prazo"], "%Y-%m-%d").date() if d.get("prazo") else None,
-                            key=f"prazo_{d['id']}",
+                            value=None,
+                            key=f"prazo_nova_{d['id']}",
                             format="DD/MM/YYYY",
                         )
  
-                        if st.button("💾 Salvar atribuição", key=f"salvar_{d['id']}", type="primary"):
+                        if st.button("💾 Salvar atribuição", key=f"salvar_nova_{d['id']}", type="primary"):
                             if not novo_analista:
                                 st.error("⚠️ Selecione um analista antes de salvar.")
                             else:
@@ -487,11 +483,35 @@ with aba_lider:
                                         break
                                 salvar_demandas(todas)
                                 st.session_state.expander_aberto_lider = None
-                                st.success("✅ Demanda atribuída!")
+                                st.success("✅ Demanda atribuída com sucesso!")
                                 st.rerun()
-                    else:
-                        # Já foi atribuída — exibe somente leitura
-                        analista_atual = d.get("analista", "—")
+
+        st.markdown("---")
+
+        # ── SEÇÃO 2: DEMANDAS JÁ ATRIBUÍDAS ──────────────────────────────────
+        st.markdown(f"### 🤝 Demandas Já Atribuídas — **{len(demandas_atribuidas)} exibida(s)**")
+ 
+        if not demandas_atribuidas:
+            st.info("Nenhuma demanda atribuída corresponde aos filtros selecionados.")
+        else:
+            for d in demandas_atribuidas:
+                icone_status = '🟡 '+d['status'] if d['status']=='Aberta' else '🔵 '+d['status'] if d['status']=='Em execução' else '🟢 '+d['status']
+                analista_atual = d.get("analista", "—")
+                titulo = f"📋 📄 {d['nome']} · {d['tipo']} · Responsável: {analista_atual} · {icone_status}"
+ 
+                with st.expander(titulo):
+                    col_info, col_acao = st.columns([1, 1])
+                    with col_info:
+                        st.markdown(f"**Solicitante:** {d['nome']}")
+                        st.markdown(f"**Setor:** {d['setor']} · **Tipo:** {d['tipo']}")
+                        st.markdown(f"**Resultado:** {d['resultado']} · **Frequência:** {d['frequencia']}")
+                        st.markdown(f"**Enviado em:** {d['data']}")
+                        st.markdown("**Objetivo:**")
+                        st.info(d["objetivo"])
+                        st.markdown("**Contexto:**")
+                        st.info(d["contexto"])
+ 
+                    with col_acao:
                         prazo_fmt = ""
                         if d.get("prazo"):
                             try:
@@ -499,14 +519,13 @@ with aba_lider:
                             except:
                                 prazo_fmt = d["prazo"]
  
-                        st.markdown(f"**Analista:** {analista_atual}")
-                        if prazo_fmt:
-                            st.markdown(f"**Prazo:** {prazo_fmt}")
-                        st.markdown(f"**Status:** {d['status']}")
+                        st.markdown(f"**Analista Responsável:** `{analista_atual}`")
+                        st.markdown(f"**Prazo Pactuado:** {prazo_fmt if prazo_fmt else 'Não definido'}")
+                        st.markdown(f"**Status Atual:** {icone_status}")
                         st.markdown("""
                         <div style="background:#FEF3E2;border-left:4px solid #F4A62A;border-radius:0 6px 6px 0;
                         padding:0.6rem 0.9rem;font-size:0.83rem;color:#7a5000;margin-top:0.5rem">
-                        🔒 Esta demanda já foi atribuída. O status só pode ser alterado pelo analista responsável.
+                        🔒 Esta demanda já está em andamento. O status e a evolução devem ser gerenciados pelo analista no painel dele.
                         </div>""", unsafe_allow_html=True)
  
         # ── Exportar ─────────────────────────────────────────────────────────
