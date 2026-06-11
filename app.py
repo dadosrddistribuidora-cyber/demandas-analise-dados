@@ -1,10 +1,10 @@
-
 import streamlit as st
 import pandas as pd
 from datetime import datetime
 from zoneinfo import ZoneInfo
 import json
 import os
+import time
  
 import gspread
 from google.oauth2.service_account import Credentials
@@ -46,40 +46,52 @@ def agora_brasil():
 SCOPES = ["https://www.googleapis.com/auth/spreadsheets"]
  
 @st.cache_resource(ttl=3600)
-def criar_cliente_sheets():
-    """Cria e cacheia o cliente autenticado por 1 hora. Reconecta automaticamente ao expirar."""
+def _obter_aba_cacheada():
+    """
+    Cria a conexão completa com o Sheets e cacheia o objeto aba por 1 hora.
+    Após 1 hora o Streamlit descarta o cache e reconecta automaticamente,
+    evitando sessão expirada sem fazer novas requisições a cada operação.
+    """
     service_account_info = dict(st.secrets["gcp_service_account"])
     service_account_info["private_key"] = service_account_info["private_key"].replace("\\n", "\n")
     credenciais = Credentials.from_service_account_info(service_account_info, scopes=SCOPES)
-    return gspread.authorize(credenciais)
+    cliente = gspread.authorize(credenciais)
+    planilha = cliente.open_by_key(st.secrets["sheets"]["id"])
+ 
+    try:
+        aba = planilha.worksheet(NOME_ABA)
+    except WorksheetNotFound:
+        aba = planilha.add_worksheet(title=NOME_ABA, rows=1000, cols=len(COLUNAS))
+ 
+    # Garante cabeçalho correto na primeira vez
+    cabecalho_atual = aba.row_values(1)
+    if cabecalho_atual != COLUNAS:
+        aba.update([COLUNAS], "A1")
+ 
+    return aba
  
 def conectar_aba_demandas():
-    """Conecta no Google Sheets usando o cliente cacheado."""
-    try:
-        cliente = criar_cliente_sheets()
-        planilha = cliente.open_by_key(st.secrets["sheets"]["id"])
- 
+    """Retorna a aba cacheada, com retry automático em caso de erro 429 (quota excedida)."""
+    for tentativa in range(1, 4):  # até 3 tentativas
         try:
-            aba = planilha.worksheet(NOME_ABA)
-        except WorksheetNotFound:
-            aba = planilha.add_worksheet(title=NOME_ABA, rows=1000, cols=len(COLUNAS))
+            return _obter_aba_cacheada()
+        except Exception as erro:
+            erro_str = str(erro)
+            _obter_aba_cacheada.clear()  # força reconexão limpa na próxima tentativa
  
-        cabecalho_atual = aba.row_values(1)
-        if cabecalho_atual != COLUNAS:
-            aba.update([COLUNAS], "A1")
+            if "429" in erro_str and tentativa < 3:
+                # Cota excedida: aguarda e tenta novamente silenciosamente
+                time.sleep(5 * tentativa)  # 5s, depois 10s
+                continue
  
-        migrar_json_para_sheets_se_existir(aba)
- 
-        return aba
- 
-    except Exception as erro:
-        st.error("Não foi possível conectar ao Google Sheets.")
-        st.info(
-            "Confira se o Google Sheets foi compartilhado com o e-mail da service account "
-            "e se o ID da planilha está correto no Secrets."
-        )
-        st.exception(erro)
-        st.stop()
+            # Erro diferente de 429, ou esgotou as tentativas
+            st.error("Não foi possível conectar ao Google Sheets.")
+            st.info(
+                "Confira se o Google Sheets foi compartilhado com o e-mail da service account "
+                "e se o ID da planilha está correto no Secrets."
+            )
+            st.exception(erro)
+            st.stop()
  
 def migrar_json_para_sheets_se_existir(aba):
     """Migra demandas antigas do arquivo local demandas.json, se ele existir e a planilha estiver vazia."""
@@ -111,6 +123,12 @@ def migrar_json_para_sheets_se_existir(aba):
 def carregar_demandas():
     """Lê todas as demandas da aba Demandas."""
     aba = conectar_aba_demandas()
+ 
+    # Migra do JSON legado apenas uma vez por sessão
+    if not st.session_state.get("_migracao_feita"):
+        migrar_json_para_sheets_se_existir(aba)
+        st.session_state["_migracao_feita"] = True
+ 
     registros = aba.get_all_records()
  
     demandas = []
