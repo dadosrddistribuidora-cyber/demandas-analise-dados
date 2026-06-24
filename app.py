@@ -428,8 +428,10 @@ with aba_lider:
         filtro_analista = st.selectbox("Filtrar por analista (Aplica-se apenas às Atribuídas)", ["Todos"] + analistas, key="filt_an_lider")
  
         # Separação das listas baseada na atribuição do analista
-        demandas_novas = [d for d in demandas if not d.get("analista")]
-        demandas_atribuidas = [d for d in demandas if d.get("analista")]
+        # Separação das listas com a nova regra de arquivamento
+        demandas_arquivadas = [d for d in demandas if d.get("classificacao_lider") in ["Duplicado", "Improcedente"]]
+        demandas_novas = [d for d in demandas if not d.get("analista") and d.get("classificacao_lider") == "Aberto"]
+        demandas_atribuidas = [d for d in demandas if d.get("analista") and d.get("classificacao_lider") == "Aberto"]
         
         # Aplica os filtros apenas na lista de atribuídas
         if filtro_status != "Todas":
@@ -498,23 +500,26 @@ with aba_lider:
                         )
 
                         if st.button("💾 Salvar atribuição", key=f"salvar_nova_{d['id']}", type="primary"):
+                            # Se o líder decidiu arquivar (Duplicado ou Improcedente)
                             if nova_classificacao in ["Duplicado", "Improcedente"]:
                                 todas = carregar_demandas()
                                 for dem in todas:
                                     if dem["id"] == d["id"]:
                                         dem["classificacao_lider"] = nova_classificacao
                                         dem["comentario_lider"] = novo_comentario.strip()
-                                        if novo_analista:
-                                            dem["analista"] = novo_analista
-                                            dem["prazo"] = str(novo_prazo) if novo_prazo else ""
-                                            dem["status"] = "Aberta"
+                                        # Forçamos o status para Concluída/Arquivada para controle interno
+                                        dem["status"] = "Concluída" 
                                         break
                                 salvar_demandas(todas)
                                 st.session_state.expander_aberto_lider = None
-                                st.success(f"✅ Demanda classificada como '{nova_classificacao}'!")
+                                st.success(f"✅ Demanda arquivada como '{nova_classificacao}'!")
                                 st.rerun()
+                            
+                            # Se continuou Aberto, mas não escolheu analista, aí sim dá erro
                             elif not novo_analista:
-                                st.error("⚠️ Selecione um analista antes de salvar.")
+                                st.error("⚠️ Selecione um analista antes de salvar ou mude a classificação para arquivar.")
+                            
+                            # Se está tudo certo para mandar para um analista
                             else:
                                 todas = carregar_demandas()
                                 for dem in todas:
@@ -593,7 +598,47 @@ with aba_lider:
                             salvar_demandas(todas)
                             st.success("✅ Comentário salvo!")
                             st.rerun()
- 
+        st.markdown("---")
+
+        # ── SEÇÃO 3: DEMANDAS ARQUIVADAS ─────────────────────────────────────
+        st.markdown(f"### 📦 Demandas Arquivadas (Duplicadas / Improcedentes) — **{len(demandas_arquivadas)}**")
+
+        if not demandas_arquivadas:
+            st.info("Nenhuma demanda foi arquivada como duplicada ou improcedente.")
+        else:
+            for d in demandas_arquivadas:
+                classe = d.get("classificacao_lider", "Duplicado")
+                badge_cor = "badge-duplicado" if classe == "Duplicado" else "badge-improcedente"
+                titulo = f"📁 {d['nome']} · {d['tipo']} · [ {classe.upper()} ]"
+
+                with st.expander(titulo):
+                    col_info, col_acao = st.columns([1, 1])
+                    with col_info:
+                        st.markdown(f"**Solicitante:** {d['nome']}")
+                        st.markdown(f"**Setor:** {d['setor']} · **Tipo:** {d['tipo']}")
+                        st.markdown(f"**Enviado em:** {d['data']}")
+                        st.markdown("**Objetivo:**")
+                        st.info(d["objetivo"])
+                    
+                    with col_acao:
+                        st.markdown(f"**Motivo do arquivamento ({classe}):**")
+                        if d.get("comentario_lider"):
+                            st.warning(d["comentario_lider"])
+                        else:
+                            st.info("*Nenhum comentário inserido pelo líder.*")
+                        
+                        # Opção para desarquivar se o líder mudar de ideia
+                        if st.button("🔄 Reabrir e voltar para novas", key=f"Desarquivar_{d['id']}"):
+                            todas = carregar_demandas()
+                            for dem in todas:
+                                if dem["id"] == d["id"]:
+                                    dem["classificacao_lider"] = "Aberto"
+                                    dem["analista"] = ""
+                                    dem["status"] = "Aberta"
+                                    break
+                            salvar_demandas(todas)
+                            st.success("Demandas reaberta com sucesso!")
+                            st.rerun()
         # ── Exportar ─────────────────────────────────────────────────────────
         if demandas:
             st.markdown("---")
