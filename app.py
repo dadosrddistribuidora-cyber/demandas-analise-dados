@@ -27,6 +27,7 @@ SENHA_ANALISTA = {
     "Artur": SENHAS.get("artur", "artur10"),
     "Gabriel": SENHAS.get("gabriel", "gabriel20"),
     "Edson": SENHAS.get("edson", "edson30"),
+    "Carol": SENHAS.get("carol", "Carol26"),
 }
  
 # ── Google Sheets ────────────────────────────────────────────────────────────
@@ -34,6 +35,7 @@ NOME_ABA = "Demandas"
 COLUNAS = [
     "id", "data", "nome", "setor", "tipo", "objetivo", "contexto",
     "resultado", "frequencia", "status", "analista", "prazo",
+    "classificacao_lider", "comentario_lider",
 ]
  
 # Fuso horário local da RD/RN/PB.
@@ -147,6 +149,8 @@ def carregar_demandas():
             demanda["status"] = "Aberta"
         if demanda.get("prazo"):
             demanda["prazo"] = str(demanda["prazo"])
+        if not demanda.get("classificacao_lider"):
+            demanda["classificacao_lider"] = "Aberto"
  
         demandas.append(demanda)
  
@@ -223,6 +227,8 @@ html, body, [class*="css"] { font-family: 'Inter', sans-serif; }
 .badge-aberta    { background:#FEF3E2; color:#854F0B; padding:2px 10px; border-radius:20px; font-size:12px; font-weight:500; }
 .badge-execucao  { background:#E6F1FB; color:#185FA5; padding:2px 10px; border-radius:20px; font-size:12px; font-weight:500; }
 .badge-concluida { background:#EAF3DE; color:#3B6D11; padding:2px 10px; border-radius:20px; font-size:12px; font-weight:500; }
+.badge-duplicado   { background:#F3E8FF; color:#6B21A8; padding:2px 10px; border-radius:20px; font-size:12px; font-weight:500; }
+.badge-improcedente { background:#FFE4E4; color:#991B1B; padding:2px 10px; border-radius:20px; font-size:12px; font-weight:500; }
  
 .lock-card {
     max-width: 380px; margin: 3rem auto; background: white;
@@ -362,6 +368,7 @@ with aba_form:
                 "objetivo": objetivo.strip(), "contexto": contexto.strip(),
                 "resultado": resultado, "frequencia": frequencia,
                 "status": "Aberta", "analista": "", "prazo": "",
+                "classificacao_lider": "Aberto", "comentario_lider": "",
             }
             demandas.insert(0, nova)
             salvar_demandas(demandas)
@@ -458,6 +465,26 @@ with aba_lider:
  
                     with col_acao:
                         st.markdown("**⚙️ Atribuição do líder**")
+
+                        # Classificação da demanda
+                        opcoes_class = ["Aberto", "Duplicado", "Improcedente"]
+                        idx_class = opcoes_class.index(d.get("classificacao_lider", "Aberto")) if d.get("classificacao_lider", "Aberto") in opcoes_class else 0
+                        nova_classificacao = st.selectbox(
+                            "📌 Classificação da demanda",
+                            opcoes_class,
+                            index=idx_class,
+                            key=f"class_nova_{d['id']}",
+                        )
+
+                        # Comentário do líder
+                        novo_comentario = st.text_area(
+                            "💬 Comentário para o analista",
+                            value=d.get("comentario_lider", ""),
+                            placeholder="Ex: Verificar se já existe relatório similar. Prioridade alta. Use a base XYZ...",
+                            height=90,
+                            key=f"coment_nova_{d['id']}",
+                        )
+
                         novo_analista = st.selectbox(
                             "Vincular analista responsável",
                             [""] + analistas,
@@ -469,9 +496,24 @@ with aba_lider:
                             key=f"prazo_nova_{d['id']}",
                             format="DD/MM/YYYY",
                         )
- 
+
                         if st.button("💾 Salvar atribuição", key=f"salvar_nova_{d['id']}", type="primary"):
-                            if not novo_analista:
+                            if nova_classificacao in ["Duplicado", "Improcedente"]:
+                                todas = carregar_demandas()
+                                for dem in todas:
+                                    if dem["id"] == d["id"]:
+                                        dem["classificacao_lider"] = nova_classificacao
+                                        dem["comentario_lider"] = novo_comentario.strip()
+                                        if novo_analista:
+                                            dem["analista"] = novo_analista
+                                            dem["prazo"] = str(novo_prazo) if novo_prazo else ""
+                                            dem["status"] = "Aberta"
+                                        break
+                                salvar_demandas(todas)
+                                st.session_state.expander_aberto_lider = None
+                                st.success(f"✅ Demanda classificada como '{nova_classificacao}'!")
+                                st.rerun()
+                            elif not novo_analista:
                                 st.error("⚠️ Selecione um analista antes de salvar.")
                             else:
                                 todas = carregar_demandas()
@@ -480,6 +522,8 @@ with aba_lider:
                                         dem["analista"] = novo_analista
                                         dem["prazo"]    = str(novo_prazo) if novo_prazo else ""
                                         dem["status"]   = "Aberta"
+                                        dem["classificacao_lider"] = nova_classificacao
+                                        dem["comentario_lider"] = novo_comentario.strip()
                                         break
                                 salvar_demandas(todas)
                                 st.session_state.expander_aberto_lider = None
@@ -518,23 +562,45 @@ with aba_lider:
                                 prazo_fmt = datetime.strptime(d["prazo"], "%Y-%m-%d").strftime("%d/%m/%Y")
                             except:
                                 prazo_fmt = d["prazo"]
- 
+
                         st.markdown(f"**Analista Responsável:** `{analista_atual}`")
                         st.markdown(f"**Prazo Pactuado:** {prazo_fmt if prazo_fmt else 'Não definido'}")
                         st.markdown(f"**Status Atual:** {icone_status}")
-                        st.markdown("""
-                        <div style="background:#FEF3E2;border-left:4px solid #F4A62A;border-radius:0 6px 6px 0;
-                        padding:0.6rem 0.9rem;font-size:0.83rem;color:#7a5000;margin-top:0.5rem">
-                        🔒 Esta demanda já está em andamento. O status e a evolução devem ser gerenciados pelo analista no painel dele.
-                        </div>""", unsafe_allow_html=True)
+
+                        # Classificação e comentário editáveis mesmo nas atribuídas
+                        opcoes_class2 = ["Aberto", "Duplicado", "Improcedente"]
+                        idx_class2 = opcoes_class2.index(d.get("classificacao_lider", "Aberto")) if d.get("classificacao_lider", "Aberto") in opcoes_class2 else 0
+                        nova_class2 = st.selectbox(
+                            "📌 Classificação",
+                            opcoes_class2,
+                            index=idx_class2,
+                            key=f"class_atr_{d['id']}",
+                        )
+                        novo_coment2 = st.text_area(
+                            "💬 Comentário para o analista",
+                            value=d.get("comentario_lider", ""),
+                            placeholder="Observações, orientações ou contexto adicional...",
+                            height=80,
+                            key=f"coment_atr_{d['id']}",
+                        )
+                        if st.button("💾 Salvar comentário", key=f"salvar_coment_{d['id']}", type="primary"):
+                            todas = carregar_demandas()
+                            for dem in todas:
+                                if dem["id"] == d["id"]:
+                                    dem["classificacao_lider"] = nova_class2
+                                    dem["comentario_lider"] = novo_coment2.strip()
+                                    break
+                            salvar_demandas(todas)
+                            st.success("✅ Comentário salvo!")
+                            st.rerun()
  
         # ── Exportar ─────────────────────────────────────────────────────────
         if demandas:
             st.markdown("---")
             df = pd.DataFrame(demandas)
-            cols = ["data","nome","setor","tipo","objetivo","contexto","resultado","frequencia","status","analista","prazo"]
+            cols = ["data","nome","setor","tipo","objetivo","contexto","resultado","frequencia","status","analista","prazo","classificacao_lider","comentario_lider"]
             df = df[[c for c in cols if c in df.columns]]
-            df.columns = ["Data","Nome","Setor","Tipo","Objetivo","Contexto","Resultado","Frequência","Status","Analista","Prazo"]
+            df.columns = ["Data","Nome","Setor","Tipo","Objetivo","Contexto","Resultado","Frequência","Status","Analista","Prazo","Classificação Líder","Comentário Líder"]
             csv = df.to_csv(index=False).encode("utf-8-sig")
             st.download_button("⬇️ Exportar CSV", data=csv,
                 file_name=f"demandas_{agora_brasil().strftime('%Y%m%d')}.csv", mime="text/csv")
@@ -639,6 +705,14 @@ with aba_analista:
                     st.info(d["objetivo"])
                     st.markdown("**Contexto:**")
                     st.info(d["contexto"])
+
+                    # Comentário do líder visível para o analista
+                    if d.get("comentario_lider"):
+                        st.markdown("**💬 Orientação do Líder:**")
+                        st.warning(d["comentario_lider"])
+                    classificacao = d.get("classificacao_lider", "Aberto")
+                    if classificacao in ["Duplicado", "Improcedente"]:
+                        st.error(f"⚠️ Esta demanda foi classificada como **{classificacao}** pelo líder.")
  
                 with col_st:
                     st.markdown("**Atualizar status**")
