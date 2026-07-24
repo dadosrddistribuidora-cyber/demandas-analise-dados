@@ -309,7 +309,7 @@ with aba_form:
         with col2:
             setor = st.selectbox("Setor / Departamento *", options=[
                 "", "Comercial", "Educação", "Faturamento", "Financeiro",
-                "Logística", "Marketing", "Televendas", "Direção", "Outro"
+                "Logística", "Marketing", "Televendas", "Direção", "Industria", "Outro"
             ], key="f_setor")
  
     st.markdown("---")
