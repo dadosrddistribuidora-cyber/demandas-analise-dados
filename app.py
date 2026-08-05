@@ -308,7 +308,7 @@ with aba_form:
             nome = st.text_input("Nome completo *", placeholder="Nome e sobrenome", key="f_nome")
         with col2:
             setor = st.selectbox("Setor / Departamento *", options=[
-                "", "Comercial", "Educação", "Faturamento", "Financeiro",
+                "", "Comercial", "Educação", "Gerencia Administrativa", "Faturamento", "Financeiro",
                 "Logística", "Marketing", "Televendas", "Direção", "Industria", "Outro"
             ], key="f_setor")
  
